@@ -1,0 +1,16 @@
+# AnnData 大文件
+*.h5ad
+
+# Python 缓存
+__pycache__/
+*.pyc
+
+# 输出目录
+spatialid_output/
+
+# VS Code 配置
+.vscode/
+
+# 训练脚本/Notebook 如果你也不想上传
+# train.ipynb
+train.py

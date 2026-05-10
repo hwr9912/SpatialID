@@ -10,6 +10,8 @@ import time
 import torch
 import numpy as np
 from torch.utils.data import DataLoader
+from anndata.experimental import AnnLoader
+from tqdm import tqdm
 
 from spatialid import SpatialModel, KDLoss, DNNModel, MultiCEFocalLoss, DNNDataset
 
@@ -35,7 +37,7 @@ class Base:
     @staticmethod
     def load_checkpoint(path):
         assert os.path.exists(path)
-        checkpoint = torch.load(path)
+        checkpoint = torch.load(path, weights_only=False)
         assert isinstance(checkpoint, dict)
         assert 'model' in checkpoint.keys()
         print(f"The checkpoint was saved: {checkpoint.keys()}")
@@ -121,15 +123,18 @@ class DnnTrainer(Base):
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr, weight_decay=weight_decay)
 
     def train(self, data, ann_key, marker_genes=None, batch_size=4096, epochs=200):
+        # 内存爆炸
         dataset = DNNDataset(adata=data, ann_key=ann_key, marker_genes=marker_genes)
         loader = DataLoader(dataset=dataset, batch_size=batch_size, drop_last=True, shuffle=True, num_workers=16)
+        # loader = AnnLoader(adatas=data, batch_size=batch_size, shuffle=True, use_default_converter=True, use_cuda=True, drop_last=True, )
 
         self.model.train()
         best_loss = np.inf
-        for epoch in range(epochs):
+        for epoch in tqdm(range(epochs)):
             epoch_acc = []
             epoch_loss = []
-            for idx, data in enumerate(loader):
+            # AnnLoader的输出是一个AnnCollectionView
+            for idx, data in tqdm(enumerate(loader)):
                 inputs, targets = data
                 inputs = inputs.to(self.device)
                 targets = targets.long().to(self.device)

@@ -38,6 +38,7 @@ class Transfer(Base):
                  output_path: str = "./output",
                  device=1):
         super(Transfer, self).__init__(device=device)
+        print("Initializing...")
         self.output_path = output_path
         self.device_type = device
         self.save_sc = osp.join(self.output_path, "learn_sc_dnn.bgi")
@@ -45,8 +46,11 @@ class Transfer(Base):
         self.save_st = osp.join(self.output_path, "annotation.bgi")
         os.makedirs(os.path.dirname(self.save_st), exist_ok=True)
 
+        print("Loading scRNA-seq Data...")
         self.sc_data = None if single_data is None else reader(single_data)
+        print("Loading spRNA-seq Data...")
         self.st_data = reader(spatial_data)
+        print("All data loaded.")
 
     @staticmethod
     def filter(adata,
@@ -109,6 +113,7 @@ class Transfer(Base):
 
         input_dims = sc_data.shape[1] if marker_genes is None else len(marker_genes)
 
+        print("Prepare to train...")
         trainer = DnnTrainer(input_dims=input_dims,
                              label_names=sc_data.obs[ann_key].cat.categories,
                              device=self.device_type,
@@ -119,6 +124,7 @@ class Transfer(Base):
                              reduction=reduction,
                              save_path=self.save_sc)
         genes = sc_data.var_names.tolist() if marker_genes is None else marker_genes
+        print("Training...")
         trainer.train(
             data=sc_data,
             ann_key=ann_key,
