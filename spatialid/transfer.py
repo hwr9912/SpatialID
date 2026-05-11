@@ -81,7 +81,7 @@ class Transfer(Base):
                  marker_genes=None,
                  batch_size=4096,
                  epoch=200,
-                 lr=3e-4,
+                 lr=1e-5,
                  weight_decay=1e-6,
                  gamma=2,
                  alpha=.25,

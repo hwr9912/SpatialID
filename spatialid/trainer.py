@@ -9,8 +9,8 @@ import os
 import time
 import torch
 import numpy as np
+import pandas as pd
 from torch.utils.data import DataLoader
-from anndata.experimental import AnnLoader
 from tqdm import tqdm
 
 from spatialid import SpatialModel, KDLoss, DNNModel, MultiCEFocalLoss, DNNDataset
@@ -37,6 +37,8 @@ class Base:
     @staticmethod
     def load_checkpoint(path):
         assert os.path.exists(path)
+        # 这一步需要加 weights_only=False
+        # UnpicklingError: Weights only load failed. This file can still be loaded, to do so you have two options, do those steps only if you trust the source of the checkpoint. 
         checkpoint = torch.load(path, weights_only=False)
         assert isinstance(checkpoint, dict)
         assert 'model' in checkpoint.keys()
@@ -119,22 +121,29 @@ class DnnTrainer(Base):
         self.model = DNNModel(input_dims, hidden_dims, output_dims).to(self.device)
         self.criterion = MultiCEFocalLoss(class_num=self.n_types, gamma=gamma, alpha=alpha, reduction=reduction)
 
-    def set_optimizer(self, lr=3e-4, weight_decay=1e-6, **kwargs):
+    # def set_optimizer(self, lr=3e-4, weight_decay=1e-6, **kwargs):
+    #     self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr, weight_decay=weight_decay)
+    def set_optimizer(self, lr=3e-4, weight_decay=1e-6, milestones=(50, 100, 150), lr_gamma=0.1, **kwargs):
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr, weight_decay=weight_decay)
+        # 设置MultiStepLR
+        self.scheduler = torch.optim.lr_scheduler.MultiStepLR(self.optimizer, milestones=list(milestones), gamma=lr_gamma)
+        # 训练循环中需要
 
     def train(self, data, ann_key, marker_genes=None, batch_size=4096, epochs=200):
         # 内存爆炸
         dataset = DNNDataset(adata=data, ann_key=ann_key, marker_genes=marker_genes)
         loader = DataLoader(dataset=dataset, batch_size=batch_size, drop_last=True, shuffle=True, num_workers=16)
-        # loader = AnnLoader(adatas=data, batch_size=batch_size, shuffle=True, use_default_converter=True, use_cuda=True, drop_last=True, )
+        # 存储训练中模型功效评估指标
+        history = []
 
         self.model.train()
         best_loss = np.inf
         for epoch in tqdm(range(epochs)):
             epoch_acc = []
             epoch_loss = []
-            # AnnLoader的输出是一个AnnCollectionView
-            for idx, data in tqdm(enumerate(loader)):
+            # 参数迭代
+            for idx, data in enumerate(loader):
+                # 下面是内存开销大头
                 inputs, targets = data
                 inputs = inputs.to(self.device)
                 targets = targets.long().to(self.device)
@@ -153,12 +162,20 @@ class DnnTrainer(Base):
                 accuracy = correct / total * 100.
                 epoch_acc.append(accuracy)
                 epoch_loss.append(train_loss)
-            print(f"\r  [{time.strftime('%Y-%m-%d %H:%M:%S')}] "
-                  f"Epoch: {epoch + 1:3d} "
-                  f"Loss: {np.mean(epoch_loss):.5f}, "
-                  f"acc: {np.mean(epoch_acc):.2f}%",
-                  flush=True,
-                  end="")
+            # MultiStepLR 更新
+            if self.scheduler is not None:
+                self.scheduler.step()
+            # 实时输出
+            now_time = time.strftime('%Y-%m-%d %H:%M:%S')
+            mean_loss = np.mean(epoch_loss)
+            mean_acc = np.mean(epoch_acc)
+            tqdm.write(
+                f"  [{now_time}] "
+                f"Epoch: {epoch + 1:3d} "
+                f"Loss: {mean_loss:.5f}, "
+                f"acc: {mean_acc:.2f}%"
+            )
+            # 保存参数
             if np.mean(epoch_loss) < best_loss:
                 best_loss = np.mean(epoch_loss)
                 state = {
@@ -167,6 +184,14 @@ class DnnTrainer(Base):
                     'label_names': self.label_names
                 }
                 self.save_checkpoint(self.save_path, state)
+            # 保存训练记录
+            history.append({
+                "epoch": epoch + 1,
+                "time": now_time,
+                "loss": mean_loss,
+                "acc": mean_acc,
+                "best_loss": best_loss,
+            })
 
         print("\n validation model: ")
         checkpoint = self.load_checkpoint(self.save_path)
@@ -187,3 +212,8 @@ class DnnTrainer(Base):
                 accuracy = correct / total * 100.
                 val_acc.append(accuracy)
             print(f"\n  [{time.strftime('%Y-%m-%d %H:%M:%S')} total accuracy: {np.mean(val_acc):.2f}%]")
+        
+        # 训练结束后保存 csv
+        history_df = pd.DataFrame(history)
+        # 保存到 self.save_path 的同级目录下
+        history_df.to_csv(os.path.join(os.path.dirname(self.save_path), "train_history.csv"), index=False)
