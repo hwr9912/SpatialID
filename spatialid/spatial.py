@@ -1,10 +1,10 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-# @Time    : 2023/9/28 9:58
-# @Author  : zhangchao
+# @Time    : 2026/5/15 15:34
+# @Author  : zhangchao, Wenrui Han
 # @File    : spatial.py
-# @Software: PyCharm
-# @Email   : zhangchao5@genomics.cn
+# @Software: VS Code
+# @Email   : zhangchao5@genomics.cn, hwr9912@163.com
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
