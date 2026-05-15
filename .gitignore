@@ -10,7 +10,3 @@ spatialid_output/
 
 # VS Code 配置
 .vscode/
-
-# 训练脚本/Notebook 如果你也不想上传
-# train.ipynb
-train.py
